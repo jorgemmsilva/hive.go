@@ -41,6 +41,9 @@ type Protocol struct {
 	netID   uint32         // network ID of the protocol
 	log     *logger.Logger // protocol logger
 
+	pingCount      map[string]uint64
+	pingCountMutex sync.RWMutex
+
 	mgr       *manager // the manager handles the actual peer discovery and re-verification
 	running   *typeutils.AtomicBool
 	closeOnce sync.Once
@@ -57,11 +60,12 @@ func New(local *peer.Local, version uint32, networkID uint32, opts ...Option) *P
 	}
 
 	p := &Protocol{
-		loc:     local,
-		version: version,
-		netID:   networkID,
-		log:     args.log,
-		running: typeutils.NewAtomicBool(),
+		loc:       local,
+		version:   version,
+		netID:     networkID,
+		log:       args.log,
+		running:   typeutils.NewAtomicBool(),
+		pingCount: make(map[string]uint64),
 	}
 
 	p.mgr = newManager(p, args.masterPeers, args.log.Named("mgr"))
@@ -140,6 +144,13 @@ func (p *Protocol) GetVerifiedPeers() []*peer.Peer {
 	return unwrapPeers(p.mgr.verifiedPeers())
 }
 
+func (p *Protocol) increasePingCount(from string) {
+	p.pingCountMutex.Lock()
+	defer p.pingCountMutex.Unlock()
+	p.pingCount[from]++
+	p.log.Info("Increasing ping counter for node:", from)
+}
+
 // HandleMessage responds to incoming peer discovery messages.
 func (p *Protocol) HandleMessage(s *server.Server, fromAddr *net.UDPAddr, from *identity.Identity, data []byte) (bool, error) {
 	if !p.running.IsSet() {
@@ -153,6 +164,7 @@ func (p *Protocol) HandleMessage(s *server.Server, fromAddr *net.UDPAddr, from *
 		if err := proto.Unmarshal(data[1:], m); err != nil {
 			return true, fmt.Errorf("invalid message: %w", err)
 		}
+		p.increasePingCount(from.ID().String())
 		if p.validatePing(fromAddr, m) {
 			p.handlePing(s, fromAddr, from, m, data)
 		}
