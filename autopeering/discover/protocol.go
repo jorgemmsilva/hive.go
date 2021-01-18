@@ -148,7 +148,7 @@ func (p *Protocol) increasePingCount(from string) {
 	p.pingCountMutex.Lock()
 	defer p.pingCountMutex.Unlock()
 	p.pingCount[from]++
-	p.log.Info("Increasing ping counter for node:", from)
+	p.log.Infow("Increasing ping counter to %v for node: %s", p.pingCount[from], from)
 }
 
 // HandleMessage responds to incoming peer discovery messages.
