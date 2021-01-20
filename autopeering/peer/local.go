@@ -4,8 +4,8 @@ import (
 	"net"
 	"sync"
 
+	"github.com/iotaledger/hive.go/autopeering/arrow"
 	"github.com/iotaledger/hive.go/autopeering/peer/service"
-	"github.com/iotaledger/hive.go/autopeering/salt"
 	"github.com/iotaledger/hive.go/crypto/ed25519"
 	"github.com/iotaledger/hive.go/identity"
 )
@@ -19,8 +19,7 @@ type Local struct {
 	// everything below is protected by a lock
 	mu            sync.RWMutex
 	serviceRecord *service.Record
-	publicSalt    *salt.Salt
-	privateSalt   *salt.Salt
+	arrow         *arrow.ArRow
 }
 
 // newLocal creates a new local peer.
@@ -77,32 +76,18 @@ func (l *Local) UpdateService(key service.Key, network string, port int) error {
 	return nil
 }
 
-// GetPublicSalt returns the public salt
-func (l *Local) GetPublicSalt() *salt.Salt {
+// GetArRow returns current Ar values
+func (l *Local) GetArRow() *arrow.ArRow {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return l.publicSalt
+	return l.arrow
 }
 
-// SetPublicSalt sets the public salt
-func (l *Local) SetPublicSalt(salt *salt.Salt) {
+// SetArRow sets current Ar values
+func (l *Local) SetArRow(arrow *arrow.ArRow) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.publicSalt = salt
-}
-
-// GetPrivateSalt returns the private salt
-func (l *Local) GetPrivateSalt() *salt.Salt {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.privateSalt
-}
-
-// SetPrivateSalt sets the private salt
-func (l *Local) SetPrivateSalt(salt *salt.Salt) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.privateSalt = salt
+	l.arrow = arrow
 }
 
 // Sign signs a message using the node's LocalIdentity.

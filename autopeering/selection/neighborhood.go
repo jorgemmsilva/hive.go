@@ -2,7 +2,9 @@ package selection
 
 import (
 	"fmt"
+	"github.com/iotaledger/hive.go/autopeering/arrow"
 	"sync"
+	"time"
 
 	"github.com/iotaledger/hive.go/autopeering/distance"
 	"github.com/iotaledger/hive.go/autopeering/peer"
@@ -26,30 +28,39 @@ func (nh *Neighborhood) String() string {
 	return fmt.Sprintf("%d/%d", nh.GetNumPeers(), nh.size)
 }
 
-func (nh *Neighborhood) getFurthest() (peer.PeerDistance, int) {
+func (nh *Neighborhood) getFromChannel(channel int) (peer.PeerDistance, int) {
 	nh.mu.RLock()
 	defer nh.mu.RUnlock()
-	if len(nh.neighbors) < nh.size {
+
+	channelConnected := false
+	index := 0
+	furthest := peer.PeerDistance{
+		Remote:   nil,
+		Channel:  channel,
+		Distance: 0,
+	}
+	for i, n := range nh.neighbors {
+		if n.Channel == channel && n.Distance > furthest.Distance {
+			furthest = n
+			index = i
+			channelConnected = true
+		}
+	}
+	if !channelConnected {
 		return peer.PeerDistance{
 			Remote:   nil,
 			Distance: distance.Max,
+			Channel:  channel,
 		}, len(nh.neighbors)
 	}
 
-	index := 0
-	furthest := nh.neighbors[index]
-	for i, n := range nh.neighbors {
-		if n.Distance > furthest.Distance {
-			furthest = n
-			index = i
-		}
-	}
 	return furthest, index
 }
 
-func (nh *Neighborhood) Select(candidates []peer.PeerDistance) peer.PeerDistance {
+// Select returns peer with candidate to replace existing connection on a given channel.
+func (nh *Neighborhood) Select(candidates []peer.PeerDistance, channel int) peer.PeerDistance {
 	if len(candidates) > 0 {
-		target, _ := nh.getFurthest()
+		target, _ := nh.getFromChannel(channel)
 		for _, candidate := range candidates {
 			if candidate.Distance < target.Distance {
 				return candidate
@@ -102,14 +113,29 @@ func (nh *Neighborhood) getPeerIndex(id identity.ID) int {
 	return -1
 }
 
-func (nh *Neighborhood) UpdateDistance(anchor, salt []byte) {
+// UpdateInboundDistance updates distances of incoming connections.
+func (nh *Neighborhood) UpdateInboundDistance(localArs *arrow.ArRow) {
 	nh.mu.Lock()
 	defer nh.mu.Unlock()
+	now := time.Now().Unix()
+	epoch := uint64(now - now%int64(arrowLifetime.Seconds()))
 	for i, n := range nh.neighbors {
-		nh.neighbors[i].Distance = distance.BySalt(anchor, n.Remote.ID().Bytes(), salt)
+		peerArs, _ := arrow.NewArRow(localArs.GetExpiration().Sub(time.Now()), outboundNeighborSize, n.Remote.Identity, epoch)
+		nh.neighbors[i].Distance = distance.ByArs(localArs.GetRows()[n.Channel], peerArs.GetArs()[n.Channel])
 	}
 }
 
+// UpdateOutboundDistance updates distances of outgoing connections.
+func (nh *Neighborhood) UpdateOutboundDistance(localArs *arrow.ArRow) {
+	nh.mu.Lock()
+	defer nh.mu.Unlock()
+	now := time.Now().Unix()
+	epoch := uint64(now - now%int64(arrowLifetime.Seconds()))
+	for i, n := range nh.neighbors {
+		peerArs, _ := arrow.NewArRow(localArs.GetExpiration().Sub(time.Now()), outboundNeighborSize, n.Remote.Identity, epoch)
+		nh.neighbors[i].Distance = distance.ByArs(localArs.GetArs()[n.Channel], peerArs.GetRows()[n.Channel])
+	}
+}
 func (nh *Neighborhood) IsFull() bool {
 	nh.mu.RLock()
 	defer nh.mu.RUnlock()

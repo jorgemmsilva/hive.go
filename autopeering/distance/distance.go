@@ -3,7 +3,13 @@ package distance
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"math"
 )
+
+// ByArs returns the difference (float64) between x and y
+func ByArs(x, y float64) float64 {
+	return math.Abs(x - y)
+}
 
 // BySalt returns the distance (uint32) between x and y
 // by xoring the hash of x and y + salt
