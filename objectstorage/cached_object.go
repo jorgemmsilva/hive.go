@@ -1,6 +1,7 @@
 package objectstorage
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -351,26 +352,31 @@ func (cachedObject *CachedObjectImpl) BatchWriteDone() {
 
 	// abort if there are still consumers
 	if consumers := atomic.LoadInt32(&(cachedObject.consumers)); consumers != 0 {
+		fmt.Println("abort if there are still consumers")
 		return
 	}
 
 	// abort if the object was modified in the mean time
 	if storableObject := cachedObject.Get(); !typeutils.IsInterfaceNil(storableObject) && storableObject.IsModified() {
+		fmt.Println("abort if the object was modified in the mean time")
 		return
 	}
 
 	// abort if the object was evicted already
 	if atomic.AddInt32(&cachedObject.evicted, 1) != 1 {
+		fmt.Println("abort if the object was evicted already")
 		return
 	}
 
 	// abort if the object could not be deleted from the cache
 	if !objectStorage.deleteElementFromCache(cachedObject.key) {
+		fmt.Println("abort if the object could not be deleted from the cache")
 		return
 	}
 
 	// abort if the storage is not empty
 	if objectStorage.size != 0 {
+		fmt.Println("abort if the storage is not empty")
 		return
 	}
 
