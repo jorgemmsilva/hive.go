@@ -58,6 +58,16 @@ func NewLocal(ip net.IP, serviceRecord *service.Record, db *DB, seed ...[]byte) 
 	return newLocal(key, ip, serviceRecord, db), nil
 }
 
+// GenerateLocalPeer returns a new randomly generated local peer.
+func GenerateLocalPeer() *Local {
+	_, privateKey, err := ed25519.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
+
+	return newLocal(privateKey, net.IPv4zero, nil, nil)
+}
+
 // Database returns the node database associated with the local peer.
 func (l *Local) Database() *DB {
 	return l.db
