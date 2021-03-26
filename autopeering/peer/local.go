@@ -64,8 +64,10 @@ func GenerateLocalPeer() *Local {
 	if err != nil {
 		panic(err)
 	}
+	services := service.New()
+	services.Update(service.PeeringKey, "udp", 8000)
 
-	return newLocal(privateKey, net.IPv4zero, nil, nil)
+	return newLocal(privateKey, net.IPv4zero, services, nil)
 }
 
 // Database returns the node database associated with the local peer.
