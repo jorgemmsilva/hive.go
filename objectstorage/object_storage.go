@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	uAtomic "go.uber.org/atomic"
+
 	"github.com/iotaledger/hive.go/events"
 	"github.com/iotaledger/hive.go/kvstore"
 	"github.com/iotaledger/hive.go/syncutils"
@@ -26,6 +28,7 @@ type ObjectStorage struct {
 	shutdown           typeutils.AtomicBool
 	partitionsManager  *PartitionsManager
 	releaseExecutor    unsafe.Pointer
+	persistedSize uAtomic.Uint64
 
 	Events Events
 }
@@ -53,6 +56,10 @@ func New(store kvstore.KVStore, objectFactory StorableObjectFactory, optionalOpt
 	return result
 }
 
+func (objectStorage *ObjectStorage) PersistedSize() uint64 {
+	return objectStorage.persistedSize.Load()
+}
+
 func (objectStorage *ObjectStorage) Put(object StorableObject) CachedObject {
 	if objectStorage.shutdown.IsSet() {
 		panic("trying to access shutdown object storage")
@@ -72,6 +79,7 @@ func (objectStorage *ObjectStorage) Store(object StorableObject) CachedObject {
 
 	object.Persist()
 	object.SetModified()
+	objectStorage.persistedSize.Add(uint64(len(object.ObjectStorageKey()) + len(object.ObjectStorageValue())))
 
 	return objectStorage.putObjectInCache(object)
 }
@@ -171,8 +179,12 @@ func (objectStorage *ObjectStorage) ComputeIfAbsent(key []byte, remappingFunctio
 
 			cachedObject.publishResult(loadedObject)
 		} else {
-			cachedObject.publishResult(remappingFunction(key))
+			obj := remappingFunction(key)
+			cachedObject.publishResult(obj)
 			cachedObject.storeOnCreation()
+			if !typeutils.IsInterfaceNil(obj) {
+				objectStorage.persistedSize.Add(uint64(len(obj.ObjectStorageKey())+ len(obj.ObjectStorageValue())))
+			}
 		}
 	}
 
@@ -190,6 +202,7 @@ func (objectStorage *ObjectStorage) DeleteIfPresent(key []byte) bool {
 
 		if storableObject := cachedObject.Get(); !typeutils.IsInterfaceNil(storableObject) {
 			if !storableObject.IsDeleted() {
+				objectStorage.persistedSize.Sub(uint64(len(storableObject.ObjectStorageKey()) + len(storableObject.ObjectStorageValue())))
 				storableObject.Delete()
 				cachedObject.Release(true)
 
@@ -214,6 +227,10 @@ func (objectStorage *ObjectStorage) DeleteIfPresent(key []byte) bool {
 
 	objectExistsInStore := objectStorage.ObjectExistsInStore(key)
 	if objectExistsInStore {
+		val, err := objectStorage.options.store.Get(key)
+		if err ==nil {
+			objectStorage.persistedSize.Sub(uint64(len(key) + len(val)))
+		}
 		cachedObject.blindDelete.Set()
 	}
 
@@ -237,6 +254,7 @@ func (objectStorage *ObjectStorage) Delete(key []byte) {
 			if !storableObject.IsDeleted() {
 				storableObject.Delete()
 				cachedObject.Release(true)
+				objectStorage.persistedSize.Sub(uint64(len(storableObject.ObjectStorageKey()) + len(storableObject.ObjectStorageValue())))
 
 				return
 			}
@@ -331,6 +349,7 @@ func (objectStorage *ObjectStorage) StoreIfAbsent(object StorableObject) (result
 	object.SetModified()
 	existingCachedObject.publishResult(object)
 	existingCachedObject.storeOnCreation()
+	objectStorage.persistedSize.Add(uint64(len(object.ObjectStorageKey()) + len(object.ObjectStorageValue())))
 
 	// construct result
 	stored = true
@@ -538,6 +557,7 @@ func (objectStorage *ObjectStorage) Prune() error {
 		objectStorage.flushMutex.Unlock()
 		return err
 	}
+	objectStorage.persistedSize.Store(0)
 
 	objectStorage.cachedObjects = make(map[string]interface{})
 	if objectStorage.size != 0 {
