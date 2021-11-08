@@ -115,7 +115,7 @@ func LogAccess(fileName string, commandsFilter ...debug.Command) Option {
 
 				default:
 					// write log entry
-					if _, err := writer.WriteString(loggedCommand.String() + "\n"); err != nil {
+					if _, err = writer.WriteString("---\n" + reflect.GetCallers(0).String() + "---\n" + loggedCommand.String() + "\n"); err != nil {
 						panic(err)
 					}
 				}
